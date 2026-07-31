@@ -1,0 +1,27 @@
+# Python virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment configuration
+.env
+.env.local
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Log files
+logs/
+*.log
+
+# IDE & OS settings
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
