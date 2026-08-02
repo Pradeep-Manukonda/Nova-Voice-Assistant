@@ -371,6 +371,11 @@ HTML_TEMPLATE = """
         </div>
 
         <div class="tts-toggle">
+            <input type="checkbox" id="autoListenCheckbox" checked>
+            <label for="autoListenCheckbox">🔄 Hands-Free Continuous Listening (Auto-listen after speaking)</label>
+        </div>
+
+        <div class="tts-toggle">
             <input type="checkbox" id="ttsCheckbox" checked>
             <label for="ttsCheckbox">🔊 Enable Speech Output (Voice Readout)</label>
         </div>
@@ -382,6 +387,11 @@ HTML_TEMPLATE = """
     const cmdInput = document.getElementById('cmdInput');
     const micBtn = document.getElementById('micBtn');
     const ttsCheckbox = document.getElementById('ttsCheckbox');
+    const autoListenCheckbox = document.getElementById('autoListenCheckbox');
+
+    let isAutoListening = false;
+    let isSpeaking = false;
+    let recognition = null;
 
     function appendMessage(sender, text, intent = null) {
         const bubble = document.createElement('div');
@@ -416,11 +426,32 @@ HTML_TEMPLATE = """
 
             // Optional Web Speech synthesis in browser
             if (ttsCheckbox.checked && 'speechSynthesis' in window) {
+                isSpeaking = true;
+                speechSynthesis.cancel(); // Stop any pending speech
                 const utterance = new SpeechSynthesisUtterance(data.response);
+                
+                utterance.onend = () => {
+                    isSpeaking = false;
+                    if (isAutoListening && autoListenCheckbox.checked) {
+                        setTimeout(safeStartListening, 300);
+                    }
+                };
+                utterance.onerror = () => {
+                    isSpeaking = false;
+                    if (isAutoListening && autoListenCheckbox.checked) {
+                        setTimeout(safeStartListening, 300);
+                    }
+                };
+                
                 speechSynthesis.speak(utterance);
+            } else if (isAutoListening && autoListenCheckbox.checked) {
+                setTimeout(safeStartListening, 500);
             }
         } catch (err) {
             appendMessage('assistant', '⚠️ Unable to connect to Nova backend service.');
+            if (isAutoListening && autoListenCheckbox.checked) {
+                setTimeout(safeStartListening, 1000);
+            }
         }
     }
 
@@ -428,17 +459,39 @@ HTML_TEMPLATE = """
         sendCommand(cmd);
     }
 
+    function safeStartListening() {
+        if (!recognition || isSpeaking) return;
+        try {
+            recognition.start();
+            micBtn.classList.add('listening');
+        } catch (e) {
+            // Already listening or starting
+        }
+    }
+
+    function safeStopListening() {
+        isAutoListening = false;
+        if (recognition) {
+            try { recognition.stop(); } catch(e) {}
+        }
+        micBtn.classList.remove('listening');
+    }
+
     // Web Speech API Voice Input
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        const recognition = new SpeechRecognition();
+        recognition = new SpeechRecognition();
         recognition.continuous = false;
         recognition.interimResults = false;
         recognition.lang = 'en-US';
 
         micBtn.onclick = () => {
-            recognition.start();
-            micBtn.classList.add('listening');
+            if (isAutoListening) {
+                safeStopListening();
+            } else {
+                isAutoListening = true;
+                safeStartListening();
+            }
         };
 
         recognition.onresult = (event) => {
@@ -447,12 +500,18 @@ HTML_TEMPLATE = """
             sendCommand(transcript);
         };
 
-        recognition.onerror = () => {
+        recognition.onerror = (e) => {
             micBtn.classList.remove('listening');
+            if (isAutoListening && autoListenCheckbox.checked && e.error !== 'aborted') {
+                setTimeout(safeStartListening, 1000);
+            }
         };
 
         recognition.onend = () => {
             micBtn.classList.remove('listening');
+            if (isAutoListening && autoListenCheckbox.checked && !isSpeaking) {
+                setTimeout(safeStartListening, 400);
+            }
         };
     } else {
         micBtn.title = "Web Speech API not supported in this browser.";
