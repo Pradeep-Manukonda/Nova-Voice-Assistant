@@ -392,6 +392,7 @@ HTML_TEMPLATE = """
     let isAutoListening = false;
     let isSpeaking = false;
     let recognition = null;
+    let lastAssistantResponse = "";
 
     function appendMessage(sender, text, intent = null) {
         const bubble = document.createElement('div');
@@ -411,6 +412,19 @@ HTML_TEMPLATE = """
         const text = textOverride || cmdInput.value.trim();
         if (!text) return;
 
+        // Immediately abort recognition to prevent picking up computer speaker audio
+        if (recognition) {
+            try { recognition.abort(); } catch(e) {}
+            micBtn.classList.remove('listening');
+        }
+
+        // Ignore self-echo transcripts if speech is active or text matches previous response
+        if (isSpeaking) return;
+        if (lastAssistantResponse && text.toLowerCase().includes(lastAssistantResponse.toLowerCase().slice(0, 20))) {
+            console.log('Ignored self-echo transcript:', text);
+            return;
+        }
+
         appendMessage('user', text);
         if (!textOverride) cmdInput.value = '';
 
@@ -418,37 +432,40 @@ HTML_TEMPLATE = """
             const res = await fetch('/api/command', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ command: text, speak: ttsCheckbox.checked })
+                body: JSON.stringify({ command: text })
             });
             const data = await res.json();
+            lastAssistantResponse = data.response || "";
 
             appendMessage('assistant', data.response, data.intent);
 
-            // Optional Web Speech synthesis in browser
+            // Web Speech synthesis in browser
             if (ttsCheckbox.checked && 'speechSynthesis' in window) {
                 isSpeaking = true;
-                speechSynthesis.cancel(); // Stop any pending speech
+                speechSynthesis.cancel(); // Clear queued speech
+                
                 const utterance = new SpeechSynthesisUtterance(data.response);
                 
                 utterance.onend = () => {
                     isSpeaking = false;
                     if (isAutoListening && autoListenCheckbox.checked) {
-                        setTimeout(safeStartListening, 300);
+                        setTimeout(safeStartListening, 700);
                     }
                 };
                 utterance.onerror = () => {
                     isSpeaking = false;
                     if (isAutoListening && autoListenCheckbox.checked) {
-                        setTimeout(safeStartListening, 300);
+                        setTimeout(safeStartListening, 700);
                     }
                 };
                 
                 speechSynthesis.speak(utterance);
             } else if (isAutoListening && autoListenCheckbox.checked) {
-                setTimeout(safeStartListening, 500);
+                setTimeout(safeStartListening, 700);
             }
         } catch (err) {
             appendMessage('assistant', '⚠️ Unable to connect to Nova backend service.');
+            isSpeaking = false;
             if (isAutoListening && autoListenCheckbox.checked) {
                 setTimeout(safeStartListening, 1000);
             }
@@ -465,14 +482,14 @@ HTML_TEMPLATE = """
             recognition.start();
             micBtn.classList.add('listening');
         } catch (e) {
-            // Already listening or starting
+            // Already active
         }
     }
 
     function safeStopListening() {
         isAutoListening = false;
         if (recognition) {
-            try { recognition.stop(); } catch(e) {}
+            try { recognition.abort(); } catch(e) {}
         }
         micBtn.classList.remove('listening');
     }
@@ -510,7 +527,7 @@ HTML_TEMPLATE = """
         recognition.onend = () => {
             micBtn.classList.remove('listening');
             if (isAutoListening && autoListenCheckbox.checked && !isSpeaking) {
-                setTimeout(safeStartListening, 400);
+                setTimeout(safeStartListening, 600);
             }
         };
     } else {
@@ -530,18 +547,11 @@ def index():
 def process_command():
     data = request.get_json() or {}
     user_command = data.get("command", "").strip()
-    should_speak = data.get("speak", False)
 
     if not user_command:
         return jsonify({"intent": "empty", "response": "Please enter or speak a valid command."})
 
     intent_name, response_text = intent_matcher.process_command(user_command)
-
-    if should_speak and response_text:
-        try:
-            speaker.speak(response_text)
-        except Exception as e:
-            logging.error(f"Speech error: {e}")
 
     return jsonify({
         "intent": intent_name,
