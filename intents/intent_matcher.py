@@ -51,7 +51,7 @@ class IntentMatcher:
         # System & Utility Intents
         self.register_intent("time", r"(current time|what time|time is it|tell me the time)", self._handle_time)
         self.register_intent("date", r"(what is today's date|today's date|what date|what day is it)", self._handle_date)
-        self.register_intent("open_app", r"(open|launch|run) (notepad|calculator|calc|cmd|command prompt|paint|explorer)", self._handle_open_app)
+        self.register_intent("open_app", r"(?:open|launch|run|start)?\s*\b(notepad|calculator|calc|cmd|command prompt|paint|explorer)\b", self._handle_open_app)
         self.register_intent("joke", r"(tell me a joke|tell a joke|say something funny|joke)", self._handle_joke)
         self.register_intent("reminder_add", r"(remind me to|set (a )?reminder (to|for)) (.+)", self._handle_add_reminder)
         self.register_intent("reminder_list", r"(read|list|show|get) (my )?reminders", self._handle_list_reminders)
@@ -63,7 +63,8 @@ class IntentMatcher:
         Parse recognised command text, match intent, and execute corresponding handler.
         Returns a tuple of (intent_name, spoken_response_string).
         """
-        clean_text = text.strip()
+        clean_text = text.strip().rstrip(".!?,")
+
         if not clean_text:
             return ("empty", "")
 
@@ -147,8 +148,9 @@ class IntentMatcher:
         return self.utilities.get_current_date()
 
     def _handle_open_app(self, text: str, match: re.Match) -> str:
-        app = match.group(2).strip() if match.lastindex >= 2 else text
+        app = match.group(1).strip() if match.lastindex >= 1 else text
         return self.utilities.open_local_app(app)
+
 
     def _handle_joke(self, text: str, match: re.Match) -> str:
         return self.utilities.tell_joke()

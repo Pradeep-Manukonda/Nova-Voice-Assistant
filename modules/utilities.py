@@ -39,20 +39,32 @@ class UtilitiesHandler:
         """
         Open common system applications (Notepad, Calculator, Command Prompt, etc.).
         """
-        clean_app = app_name.lower().strip()
+        clean_app = app_name.lower().strip().rstrip(".!?,")
+
+        # Extract target app if phrase is like "open notepad" or "launch calculator"
+        for word in ["open ", "launch ", "run ", "start "]:
+            if clean_app.startswith(word):
+                clean_app = clean_app[len(word):].strip()
 
         # Windows app mapping
         app_commands = {
-            "notepad": "notepad.exe",
-            "calculator": "calc.exe",
-            "calc": "calc.exe",
-            "command prompt": "cmd.exe",
-            "cmd": "cmd.exe",
-            "paint": "mspaint.exe",
-            "explorer": "explorer.exe",
+            "notepad": "start notepad",
+            "calculator": "start calc",
+            "calc": "start calc",
+            "command prompt": "start cmd",
+            "cmd": "start cmd",
+            "paint": "start mspaint",
+            "explorer": "start explorer",
         }
 
         cmd = app_commands.get(clean_app)
+        if not cmd and "notepad" in clean_app:
+            cmd = "start notepad"
+            clean_app = "notepad"
+        elif not cmd and ("calculator" in clean_app or "calc" in clean_app):
+            cmd = "start calc"
+            clean_app = "calculator"
+
         if cmd:
             try:
                 subprocess.Popen(cmd, shell=True)
@@ -63,6 +75,7 @@ class UtilitiesHandler:
                 return f"Sorry, I couldn't open {clean_app}."
         else:
             return f"I don't know how to open {app_name}. You can configure it in application mappings."
+
 
     def add_reminder(self, reminder_text: str) -> str:
         """
